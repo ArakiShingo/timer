@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>プレゼンタイマー</title>
+  <style>
+    body {
+      background-color: white;
+      color: black;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      transition: background-color 0.3s;
+    }
+    .dark-mode {
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    .timer {
+      font-size: 15vw; /* 初期は小サイズ */
+      font-weight: bold;
+      text-align: center;
+      z-index: 1;
+    }
+    .controls, .skip-buttons {
+      margin-top: 20px;
+      text-align: center;
+      z-index: 1;
+    }
+    button {
+      font-size: 1.05rem;
+      padding: 7px 14px;
+      margin: 7px;
+      position: relative;
+      z-index: 1;
+    }
+    input {
+      font-size: 1.2rem;
+      width: 50px;
+    }
+    #settingsPanel {
+      position: fixed;
+      top: 0;
+      left: -350px; /* 初期は画面外に隠す */
+      width: 350px;
+      height: 100%;
+      background-color: white;
+      box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+      padding: 20px;
+      transition: left 0.3s ease-in-out;
+      z-index: 2;
+      display: none; /* 初期状態では非表示 */
+    }
+    #settingsPanel.show {
+      display: block;
+      left: 0; /* ボタンを押すとスライドして表示 */
+    }
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: none;
+      z-index: 1;
+    }
+    #overlay.show {
+      display: block;
+    }
+    #toggleButton {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      width: 70px;
+      height: 70px;
+      background-image: url('botan.png');
+      background-size: cover;
+      cursor: pointer;
+      z-index: 3;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="timerDisplay" class="timer">00:00</div>
+
+  <div class="controls">
+    <button onclick="startTimer()">スタート</button>
+    <button onclick="stopTimer()">ストップ</button>
+    <button onclick="resetTimer()">リセット</button>
+  </div>
+
+  <div class="skip-buttons">
+    <button onclick="skipTime(-60)" title="1分戻る">&lt;&lt;</button>
+    <button onclick="skipTime(-10)" title="10秒戻る">&lt;</button>
+    <button onclick="skipTime(10)" title="10秒スキップ">&gt;</button>
+    <button onclick="skipTime(60)" title="1分スキップ">&gt;&gt;</button>
+  </div>
+
+  <div id="settingsPanel">
+    <h3>設定パネル</h3>
+    <label>カウントモード:
+      <select id="mode">
+        <option value="up">カウントアップ</option>
+        <option value="down">カウントダウン</option>
+      </select>
+    </label>
+    <br>
+    <label>カウントダウン初期時間 (分): 
+      <input type="number" id="initialTime" value="20" />
+    </label>
+    <br>
+    <label>鈴1回目 (分): <input type="number" id="bell1" value="10"></label>
+    <br>
+    <label>鈴2回目 (分): <input type="number" id="bell2" value="15"></label>
+    <br>
+    <label>鈴3回目 (分): <input type="number" id="bell3" value="20"></label>
+    <br>
+    <label>タイマーのフォントサイズ:
+      <select id="fontSize">
+        <option value="small">小</option>
+        <option value="medium">中</option>
+        <option value="large">大</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="overlay"></div>
+
+  <div id="toggleButton"></div>
+
+  <script>
+    let timer;
+    let time = 0;
+    let isCounting = false;
+    const bell1Sound = new Audio('bell1.mp3');
+    const bell2Sound = new Audio('bell2.mp3');
+    const bell3Sound = new Audio('bell3.mp3');
+    
+    // カウントダウン/カウントアップ時のデフォルト設定
+    const defaultBellTimes = {
+      up: { bell1: 10, bell2: 15, bell3: 20 },
+      down: { bell1: 10, bell2: 5, bell3: 0 }
+    };
+
+    document.getElementById('mode').addEventListener('change', function() {
+      const mode = this.value;
+      if (mode === 'down') {
+        // カウントダウンモード時の鈴の時間を変更
+        document.getElementById('bell1').value = defaultBellTimes.down.bell1;
+        document.getElementById('bell2').value = defaultBellTimes.down.bell2;
+        document.getElementById('bell3').value = defaultBellTimes.down.bell3;
+      } else if (mode === 'up') {
+        // カウントアップモード時の鈴の時間をデフォルトに戻す
+        document.getElementById('bell1').value = defaultBellTimes.up.bell1;
+        document.getElementById('bell2').value = defaultBellTimes.up.bell2;
+        document.getElementById('bell3').value = defaultBellTimes.up.bell3;
+      }
+    });
+
+    function startTimer() {
+      if (isCounting) return;
+      isCounting = true;
+      const mode = document.getElementById('mode').value;
+      const bell1 = parseInt(document.getElementById('bell1').value) * 60;
+      const bell2 = parseInt(document.getElementById('bell2').value) * 60;
+      const bell3 = parseInt(document.getElementById('bell3').value) * 60;
+
+      if (mode === 'down') {
+        time = parseInt(document.getElementById('initialTime').value) * 60;
+      }
+
+      timer = setInterval(() => {
+        if (mode === 'up') time++;
+        else time--;
+
+        // 鈴のタイミングでサウンドを再生
+        if (time === bell1) bell1Sound.play();
+        else if (time === bell2) bell2Sound.play();
+        else if (time === bell3) bell3Sound.play();
+
+        // カウントダウンモードで0秒以下の場合、文字色を赤に変更
+        if (mode === 'down' && time <= 0) {
+          document.getElementById('timerDisplay').style.color = 'red';
+        }
+        // カウントアップモードで鈴3回目の時間を超えた場合、文字色を赤に変更
+        else if (mode === 'up' && time >= bell3) {
+          document.getElementById('timerDisplay').style.color = 'red';
+        }
+        // それ以外の状態で文字色を黒にリセット
+        else {
+          document.getElementById('timerDisplay').style.color = 'black';
+        }
+
+        document.getElementById('timerDisplay').textContent = formatTime(time);
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timer);
+      isCounting = false;
+    }
+
+    function resetTimer() {
+      stopTimer();
+      time = 0;
+      document.getElementById('timerDisplay').textContent = formatTime(time);
+    }
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    const toggleButton = document.getElementById('toggleButton');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const overlay = document.getElementById('overlay');
+    
+    toggleButton.addEventListener('click', () => {
+      settingsPanel.classList.toggle('show');
+      overlay.classList.toggle('show');
+      document.body.classList.toggle('dark-mode');
+    });
+
+    overlay.addEventListener('click', () => {
+      settingsPanel.classList.remove('show');
+      overlay.classList.remove('show');
+      document.body.classList.remove('dark-mode');
+    });
+
+    function skipTime(seconds) {
+      time += seconds;
+      document.getElementById('timerDisplay').textContent = formatTime(time);
+      if (time < 0) {
+        document.getElementById('timerDisplay').textContent = `-${formatTime(-time)}`;
+      }
+    }
+
+    // フォントサイズ変更
+    document.getElementById('fontSize').addEventListener('change', function() {
+      const selectedSize = this.value;
+      const timerDisplay = document.getElementById('timerDisplay');
+
+      if (selectedSize === 'large') {
+        timerDisplay.style.fontSize = '30vw'; // 大サイズ (2倍)
+      } else if (selectedSize === 'medium') {
+        timerDisplay.style.fontSize = '22.5vw'; // 中サイズ (1.5倍)
+      } else {
+        timerDisplay.style.fontSize = '15vw'; // 小サイズ (デフォルト)
+      }
+    });
+  </script>
+</body>
+</html>
